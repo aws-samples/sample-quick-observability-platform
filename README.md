@@ -23,10 +23,10 @@ Amazon Quick generates operational data across two AWS services. This solution c
 
 | Data source | What it captures | How this solution ingests it |
 |-------------|-----------------|------------------------------|
-| [CloudWatch Logs](https://docs.aws.amazon.com/quick/latest/userguide/monitoring-quicksuite-chat-feedback-cloudwatch.html) | Chat conversations, user feedback (thumbs up/down with reasons), agent hours consumption | Vended logs delivery → CloudWatch Log Groups → Subscription Filters → Firehose (Lambda transform) → S3 |
+| [CloudWatch Logs](https://docs.aws.amazon.com/quick/latest/userguide/monitoring-quicksuite-chat-feedback-cloudwatch.html) | Chat conversations, user feedback (thumbs up/down with reasons), agent hours consumption, index storage usage per source | Vended logs delivery → CloudWatch Log Groups → Subscription Filters → Firehose (Lambda transform) → S3 |
 | [CloudTrail](https://docs.aws.amazon.com/quick/latest/userguide/incident-response-logging-and-monitoring-qs.html) | API calls and service events (dashboard views, user management, CRUD operations), user identity, source IP | EventBridge rule (filters `aws.quicksight` API calls and service events) → Firehose (Lambda transform) → S3 |
 
-All data is encrypted at rest with a customer-managed KMS key (auto-rotation enabled) and in transit over HTTPS. A KMS key policy grants each service principal only the specific KMS actions it needs. CloudWatch Logs data protection policies on all three log groups (chat, feedback, and agent hours) use all available managed data identifiers to detect and mask sensitive data including credentials, financial information, PII, PHI, and device identifiers. Only users with the `logs:Unmask` IAM permission can view unmasked data. Every IAM role is scoped to the minimum permissions required, and all CDK stacks pass [cdk-nag AWS Solutions](https://github.com/cdklabs/cdk-nag) checks with zero non-compliant findings.
+All data is encrypted at rest with a customer-managed KMS key (auto-rotation enabled) and in transit over HTTPS. A KMS key policy grants each service principal only the specific KMS actions it needs. CloudWatch Logs data protection policies on all four log groups (chat, feedback, agent hours, and index usage) use all available managed data identifiers to detect and mask sensitive data including credentials, financial information, PII, PHI, and device identifiers. Only users with the `logs:Unmask` IAM permission can view unmasked data. Every IAM role is scoped to the minimum permissions required, and all CDK stacks pass [cdk-nag AWS Solutions](https://github.com/cdklabs/cdk-nag) checks with zero non-compliant findings.
 
 ## Security
 
@@ -40,7 +40,7 @@ This solution applies defense-in-depth across encryption, access control, data p
 
 - **Encryption at rest** — All data is encrypted with a customer-managed KMS key (`enable_key_rotation=True`). The same key encrypts CloudWatch Log Groups, S3 objects (with S3 Bucket Key), Firehose delivery streams, and Lambda environment variables.
 - **Encryption in transit** — The S3 data lake bucket enforces HTTPS-only access (`enforce_ssl=True`).
-- **PII masking** — CloudWatch Logs [data protection policies](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data.html) on all three log groups (chat, feedback, and agent hours) use all available managed data identifiers to detect and mask sensitive data including credentials (e.g. AWS secret keys, private keys), financial information (e.g. credit card numbers, bank account numbers), PII (e.g. driver's licenses, social security numbers, passport numbers, email addresses, phone numbers), PHI (e.g. health insurance numbers, Medicare beneficiary numbers), and device identifiers (e.g. IP addresses). Only users with the `logs:Unmask` IAM permission can view unmasked data.
+- **PII masking** — CloudWatch Logs [data protection policies](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data.html) on all four log groups (chat, feedback, agent hours, and index usage) use all available managed data identifiers to detect and mask sensitive data including credentials (e.g. AWS secret keys, private keys), financial information (e.g. credit card numbers, bank account numbers), PII (e.g. driver's licenses, social security numbers, passport numbers, email addresses, phone numbers), PHI (e.g. health insurance numbers, Medicare beneficiary numbers), and device identifiers (e.g. IP addresses). Only users with the `logs:Unmask` IAM permission can view unmasked data.
 - **Sensitive content control** — Chat message content (`user_message`, `system_text_message`) may contain sensitive or regulated data from connected enterprise sources. Before enabling message content logging, review your organization's data privacy, compliance, and data retention policies. By default, Quick omits these fields from the CloudWatch log events entirely. When message content logging is enabled, Lake Formation column-level exclusion prevents the Quick Sight service role from accessing these columns, while the deploying admin retains full access for Athena queries. This is configurable at deployment time.
 - **Least-privilege IAM** — Each IAM role is scoped to the minimum permissions required. The Firehose role can only write to specific S3 prefixes (`cloudwatch-logs/*`, `cloudtrail/*`, `errors/*`). Lambda has no S3 access — Firehose writes to S3, not Lambda. The KMS key policy grants each service principal only the specific KMS actions it needs.
 - **S3 hardening** — The data lake bucket enables versioning, blocks all public access (`BlockPublicAccess.BLOCK_ALL`), and enforces SSL.
@@ -95,12 +95,12 @@ python3 deploy.py --logs
 
 Provisions (via CDK — LogsStack):
 - Customer-managed KMS key with automatic rotation and key alias (`alias/{prefix}-observability`)
-- CloudWatch Log Groups (chat, feedback, agent hours) — KMS encrypted
-- [Data protection policy](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data.html) on all three log groups (chat, feedback, and agent hours) — uses all available managed data identifiers to detect and mask credentials, financial information, PII, PHI, and device identifiers
+- CloudWatch Log Groups (chat, feedback, agent hours, index usage) — KMS encrypted
+- [Data protection policy](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data.html) on all four log groups (chat, feedback, agent hours, and index usage) — uses all available managed data identifiers to detect and mask credentials, financial information, PII, PHI, and device identifiers
 - Sensitive content control — chat message content (`user_message`, `system_text_message`) may contain sensitive or regulated data from connected enterprise sources. Before enabling message content logging, review your organization's data privacy, compliance, and data retention policies. The deployment prompts whether to include this content. When excluded (default), Quick omits these fields from the CloudWatch log events entirely
-- Delivery Sources linking Amazon Quick to CloudWatch (log types: `CHAT_LOGS`, `FEEDBACK_LOGS`, `AGENT_HOURS_LOGS`)
+- Delivery Sources linking Amazon Quick to CloudWatch (log types: `CHAT_LOGS`, `FEEDBACK_LOGS`, `AGENT_HOURS_LOGS`, `INDEX_USAGE_LOGS`)
 - Delivery Destinations pointing to the log groups
-- Deliveries connecting sources to destinations. The chat delivery requests all optional fields (latency, time_to_first_token, surface_type, web_search, namespace) for detailed performance data. The feedback delivery includes research_id and namespace. The agent hours delivery includes service_resource_arn.
+- Deliveries connecting sources to destinations. The chat delivery requests all optional fields (latency, time_to_first_token, surface_type, web_search, namespace) for detailed performance data. The feedback delivery includes research_id and namespace. The agent hours delivery includes service_resource_arn. The index usage delivery includes consumed_index_size, source_type, source_name, source_arn, consumed_source_size, consumed_source_doc_count, resource_arn, and user_arn.
 - KMS key policy grants for `delivery.logs.amazonaws.com`, `logs.{region}.amazonaws.com`, and the Quick Sight service role
 
 Prompts for: resource prefix, AWS CLI profile, log group names (defaults provided), message content opt-in. Auto-detects the Amazon Quick subscription region.
@@ -109,6 +109,7 @@ Prompts for: resource prefix, AWS CLI profile, log group names (defaults provide
 - **Chat logs**: Ask questions using the Amazon Quick chat agent (My Assistant)
 - **Feedback logs**: Provide thumbs up/down feedback on chat responses
 - **Agent hours logs**: Use Quick Flows, Research, or Automations
+- **Index usage logs**: Generated automatically when knowledge base or Space content changes (created, updated, synced, or deleted)
 - **CloudTrail events**: Generated automatically by any Amazon Quick console or API activity
 
 Data flows to CloudWatch within minutes of generating activity.
@@ -124,7 +125,7 @@ Prerequisites: Step 1 completed (`cdk/cdk-outputs.json` must exist with LogsStac
 Provisions (via CDK — PipelineStack, imports KMS key from Step 1):
 - S3 bucket (versioned, HTTPS enforced, Block Public Access, S3 Bucket Key enabled) — named `{stackname}-datalake-{account_id}`
 - Lambda functions — LogTransform (Python 3.14, 512 MB, 300s timeout), CloudTrailTransform (Python 3.14, 512 MB, 300s timeout). Neither function has S3 access — Firehose writes to S3, not Lambda.
-- Firehose delivery streams (128 MB / 900s buffer, GZIP compression, customer-managed KMS encryption) for chat, feedback, agent-hours, cloudtrail — S3 write scoped to specific prefixes (`cloudwatch-logs/*`, `cloudtrail/*`, `errors/*`)
+- Firehose delivery streams (128 MB / 900s buffer, GZIP compression, customer-managed KMS encryption) for chat, feedback, agent-hours, index-usage, cloudtrail — S3 write scoped to specific prefixes (`cloudwatch-logs/*`, `cloudtrail/*`, `errors/*`)
 - Subscription Filters connecting Step 1 log groups to Firehose (via a CloudWatch Logs IAM role)
 - EventBridge rule filtering `source: aws.quicksight`, `detail-type: ["AWS API Call via CloudTrail", "AWS Service Event via CloudTrail"]` — routes to CloudTrail Firehose via an EventBridge IAM role
 
@@ -147,12 +148,14 @@ Runs `scripts/setup_datacatalog.py` which provisions:
   - `feedback_logs` — timestamp, log_group, log_stream, message_type, user_arn, user_type, conversation_id, system_message_id, user_message_id, research_id, feedback_type, feedback_reason, feedback_details, rating, status_code, resource_arn, account_id, event_timestamp, namespace
   - `agent_hours_logs` — timestamp, log_group, log_stream, message_type, user_arn, subscription_type, reporting_service, usage_group, usage_hours, service_resource_arn, resource_arn, account_id, event_timestamp
   - `cloudtrail_events` — timestamp, event_id, event_name, event_source, event_type, event_category, aws_region, source_ip, user_agent, user_type, principal_id, user_name, user_arn, account_id, recipient_account_id, shared_event_id, read_only, error_code, error_message, request_parameters, response_elements, service_event_details, resources, resource_type, resource_arn
+  - `index_usage_logs` — timestamp, log_group, log_stream, message_type, user_arn, consumed_index_size, source_type, source_name, source_arn, consumed_source_size, consumed_source_doc_count, resource_arn, account_id, event_timestamp
 - Athena views:
   - `chat_activity` — conversations with feature classification (System Chat Agent (My Assistant), Custom Chat Agent, Flow), user name extraction, latency, surface type
   - `feedback_analysis` — user satisfaction (Useful/Not Useful), feedback reasons, free-text details, Research vs Chat source
   - `agent_hours_usage` — hours by service (RESEARCH, FLOW, AUTOMATION), resource type, included vs extra
   - `api_audit_trail` — CloudTrail API calls categorized by feature, read vs write, error codes, caller identity
   - `querydatabase_events` — database query events from CloudTrail with datasource_id, query_id, dashboard_or_analysis_id, dataset_id, dataset_mode
+  - `index_usage` — per-source storage metrics with consumed_index_size_gb, consumed_source_size_gb, consumed_source_size_mb, source_type (SPACE, KB), source_name, consumed_source_doc_count, user_name extraction
 - Lake Formation permissions (optional — prompted during setup): S3 data location registration, KMS key policy update for Lake Formation service-linked role, DATA_LOCATION_ACCESS grants, database-level grants, per-table SELECT/DESCRIBE grants for the caller and Quick Sight service role. When message content logging is enabled, the Quick Sight service role grant on `chat_logs` uses column-level exclusion to prevent access to `user_message` and `system_text_message` — the admin caller retains full access to all columns.
 
 Prompts for: AWS CLI profile, Athena database name, workgroup name, S3 location for query results, and access control mode (Lake Formation or IAM). If message content logging was enabled in Step 1, the `chat_logs` table includes `user_message` and `system_text_message` columns.
@@ -164,6 +167,7 @@ SELECT COUNT(*) FROM quickobserve_db.chat_logs;
 SELECT COUNT(*) FROM quickobserve_db.feedback_logs;
 SELECT COUNT(*) FROM quickobserve_db.agent_hours_logs;
 SELECT COUNT(*) FROM quickobserve_db.cloudtrail_events;
+SELECT COUNT(*) FROM quickobserve_db.index_usage_logs;
 ```
 
 ### Step 4: Set up Quick Sight dashboard
@@ -182,11 +186,13 @@ Provisions (via CDK — QuickSightStack):
   - **Feedback Analysis** — feedback type, reasons, details, Research vs Chat source (queries `feedback_logs` table)
   - **Agent Hours Usage** — hours by service, resource type parsed from ARN, included vs extra (queries `agent_hours_logs` table)
   - **API Audit Trail** — CloudTrail API calls and service events categorized by feature (queries `cloudtrail_events` table)
+  - **Index Usage** — per-source storage metrics, consumed index size, source type breakdown (queries `index_usage` view)
 - Analysis and dashboard with date range parameter controls (StartDate, EndDate) and per-sheet time range filters, each sheet with a detail table and DATA_POINT_CLICK filter actions (clicking any chart element filters the detail table on the same sheet):
   - **Chat Agents Usage** — Active Users KPI, Total Chat Sessions KPI, User Adoption Trend (line), Chat Sessions by Feature (bar), Top Users by Chat Sessions (bar), Feature Adoption Over Time (line, grouped by feature), Sessions by Status (bar), Chat Session Details (table)
   - **Hours Spent on Research, Flow, Automation** — Total Agent Hours KPI, Agent Hours by Service (pie), Top Users by Agent Hours (bar), Included vs Extra Hours (pie), Agent Hours Trend by Service (line, grouped by service), Agent Hours Details (table)
   - **User Feedback** — Satisfaction Distribution (pie), Top Feedback Reasons (bar), Feedback Details (table)
   - **Governance & Admin Activity** — API Activity by Feature (bar), API Callers by Identity Type (pie), Recent API Operations (table)
+  - **Index Storage Usage** — Total Index Size KPI (GB), Storage by Source Type (pie), Index Storage Trend (line), Top Knowledge Bases by Size (bar), Top Spaces by Size (bar), Top Users by Storage (bar), All Sources Detail (table)
 
 Uses saved AWS CLI profile, Athena database name, and workgroup from previous steps (prompts only if not saved). Auto-detects Quick Sight owner from caller identity (prompts for Quick Sight user ARN if auto-detection fails).
 
@@ -208,8 +214,8 @@ The script reads dataset ARNs and the Quick Sight owner from `cdk/cdk-outputs.js
 
 Creates:
 - Quick Sight topic (`{prefix}-observability-topic`) named "Quick Observability" with `NEW_READER_EXPERIENCE` and `QBusinessInsightsEnabled`
-- Field-level metadata: friendly names, descriptions, synonyms, semantic types, aggregation defaults, and data roles for each column across all four datasets
-- Custom instructions that route natural language questions to the correct dataset based on question type (adoption → Chat Activity, satisfaction → Feedback Analysis, cost → Agent Hours Usage, governance → API Audit Trail)
+- Field-level metadata: friendly names, descriptions, synonyms, semantic types, aggregation defaults, and data roles for each column across all five datasets
+- Custom instructions that route natural language questions to the correct dataset based on question type (adoption → Chat Activity, satisfaction → Feedback Analysis, cost → Agent Hours Usage, governance → API Audit Trail, storage → Index Usage)
 - Owner permissions on the topic
 
 ### Step 6: Create a custom chat agent
@@ -257,6 +263,7 @@ Generate activity in Amazon Quick (ask a question, provide feedback), then:
 aws logs tail /aws/vendedlogs/quick/chat --since 5m --format short
 aws logs tail /aws/vendedlogs/quick/feedback --since 5m --format short
 aws logs tail /aws/vendedlogs/quick/agent-hours --since 5m --format short
+aws logs tail /aws/vendedlogs/quick/index-usage --since 5m --format short
 ```
 
 ```bash
@@ -271,6 +278,7 @@ Wait 15–20 minutes after generating activity, then:
 ```bash
 # Check S3 for data (replace with your bucket name)
 aws s3 ls s3://{stackname}-datalake-{account_id}/cloudwatch-logs/chat/ --recursive
+aws s3 ls s3://{stackname}-datalake-{account_id}/cloudwatch-logs/index-usage/ --recursive
 aws s3 ls s3://{stackname}-datalake-{account_id}/cloudtrail/ --recursive
 ```
 
@@ -298,11 +306,11 @@ aws events describe-rule --name {stackname}-CloudTrailEvents --query State
 
 ### Validate Athena (after Step 3)
 
-Query the `chat_logs`, `feedback_logs`, `agent_hours_logs`, and `cloudtrail_events` tables in the Athena console to verify data is flowing. Adjust the `year`/`month` partition values to match when you generated activity. Also verify the pre-built views (`chat_activity`, `feedback_analysis`, `agent_hours_usage`, `api_audit_trail`, `querydatabase_events`) return results.
+Query the `chat_logs`, `feedback_logs`, `agent_hours_logs`, `cloudtrail_events`, and `index_usage_logs` tables in the Athena console to verify data is flowing. Adjust the `year`/`month` partition values to match when you generated activity. Also verify the pre-built views (`chat_activity`, `feedback_analysis`, `agent_hours_usage`, `api_audit_trail`, `querydatabase_events`, `index_usage`) return results.
 
 ### Example queries
 
-Query the `chat_activity`, `feedback_analysis`, `agent_hours_usage`, and `api_audit_trail` views for observability insights:
+Query the `chat_activity`, `feedback_analysis`, `agent_hours_usage`, `api_audit_trail`, and `index_usage` views for observability insights:
 
 ```sql
 -- Track adoption: daily active users and sessions
@@ -332,6 +340,16 @@ SELECT api_feature, read_or_write, COUNT(*) AS count
 FROM {database}.api_audit_trail
 GROUP BY api_feature, read_or_write
 ORDER BY count DESC;
+
+-- Top sources by consumed storage size (index usage)
+SELECT source_name, source_type,
+       MAX(consumed_index_size_gb) AS total_index_size_gb,
+       SUM(consumed_source_size_gb) AS total_source_size_gb,
+       SUM(consumed_source_doc_count) AS total_docs
+FROM {database}.index_usage
+GROUP BY source_name, source_type
+ORDER BY total_source_size_gb DESC
+LIMIT 20;
 ```
 
 ---
@@ -372,7 +390,7 @@ ORDER BY count DESC;
 │
 ├── lambda/                            # Lambda function source code
 │   ├── log_transform/
-│   │   ├── index.py                   # Chat, feedback, agent hours transform
+│   │   ├── index.py                   # Chat, feedback, agent hours, index usage transform
 │   │   └── README.md
 │   └── cloudtrail_transform/
 │       ├── index.py                   # CloudTrail event transform
@@ -383,11 +401,13 @@ ORDER BY count DESC;
 │   ├── create_feedback_logs_table.sql
 │   ├── create_agent_hours_logs_table.sql
 │   ├── create_cloudtrail_events_table.sql
+│   ├── create_index_usage_logs_table.sql
 │   ├── create_chat_activity_view.sql
 │   ├── create_feedback_analysis_view.sql
 │   ├── create_agent_hours_usage_view.sql
 │   ├── create_api_audit_trail_view.sql
-│   └── create_querydatabase_events_view.sql
+│   ├── create_querydatabase_events_view.sql
+│   └── create_index_usage_view.sql
 │
 ├── scripts/                           # Deployment helper scripts
 │   ├── setup_datacatalog.py           # Creates Glue database, Athena tables/views, Lake Formation

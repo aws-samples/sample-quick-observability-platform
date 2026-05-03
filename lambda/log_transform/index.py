@@ -116,18 +116,25 @@ def transform_log_event(log_event, log_data):
             dt = datetime.fromtimestamp(envelope_ts / 1000.0, tz=timezone.utc)
 
         # Build transformed record
+        # INDEX_USAGE_LOGS uses snake_case field names (log_type, account_id)
+        # while older log types use camelCase (logType, accountId).
+        # Check both conventions for the message_type field.
         transformed = {
             'timestamp': dt.strftime('%Y-%m-%dT%H:%M:%S'),
             'log_group': log_data.get('logGroup', ''),
             'log_stream': log_data.get('logStream', ''),
-            'message_type': message_data.get('logType', 'UNKNOWN'),
+            'message_type': message_data.get('logType',
+                            message_data.get('log_type', 'UNKNOWN')),
         }
 
         # Field name mappings: raw CloudWatch log field -> Athena column name
-        # The raw logs use camelCase but Athena tables use snake_case
+        # The raw logs use camelCase but Athena tables use snake_case.
+        # INDEX_USAGE_LOGS uses snake_case natively (log_type, account_id),
+        # so both conventions are mapped here.
         field_mappings = {
             'accountId': 'account_id',
             'logType': 'message_type',  # already handled above, skip in loop
+            'log_type': 'message_type',  # INDEX_USAGE_LOGS uses snake_case
         }
 
         # Sensitive fields stripped before data reaches S3.

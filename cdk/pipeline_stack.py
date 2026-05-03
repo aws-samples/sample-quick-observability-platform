@@ -39,6 +39,7 @@ class PipelineStack(Stack):
         chat_logs_group_name = self.node.try_get_context("chatLogsGroup") or "/aws/vendedlogs/quick/chat"
         feedback_logs_group_name = self.node.try_get_context("feedbackLogsGroup") or "/aws/vendedlogs/quick/feedback"
         agent_hours_logs_group_name = self.node.try_get_context("agentHoursLogsGroup") or "/aws/vendedlogs/quick/agent-hours"
+        index_usage_logs_group_name = self.node.try_get_context("indexUsageLogsGroup") or "/aws/vendedlogs/quick/index-usage"
 
         # Whether to keep message content in the data lake (default: strip it)
         include_message_content = self.node.try_get_context("includeMessageContent") == "true"
@@ -358,6 +359,13 @@ class PipelineStack(Stack):
             log_transform_function
         )
 
+        index_usage_firehose = create_firehose_stream(
+            "IndexUsageFirehose",
+            f"{resource_prefix}-index-usage",
+            "cloudwatch-logs/index-usage/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/",
+            log_transform_function
+        )
+
         # CloudTrail events Firehose stream
         cloudtrail_firehose = create_firehose_stream(
             "CloudTrailFirehose",
@@ -377,7 +385,8 @@ class PipelineStack(Stack):
                 resources=[
                     chat_logs_firehose.attr_arn,
                     feedback_logs_firehose.attr_arn,
-                    agent_hours_firehose.attr_arn
+                    agent_hours_firehose.attr_arn,
+                    index_usage_firehose.attr_arn
                 ]
             )
         )
@@ -473,6 +482,18 @@ class PipelineStack(Stack):
         agent_hours_subscription.add_dependency(agent_hours_firehose)
         agent_hours_subscription.node.add_dependency(cloudwatch_logs_role)
 
+        # Index usage logs subscription filter
+        index_usage_subscription = logs.CfnSubscriptionFilter(
+            self,
+            "IndexUsageSubscriptionFilter",
+            log_group_name=index_usage_logs_group_name,
+            filter_pattern="",
+            destination_arn=index_usage_firehose.attr_arn,
+            role_arn=cloudwatch_logs_role.role_arn
+        )
+        index_usage_subscription.add_dependency(index_usage_firehose)
+        index_usage_subscription.node.add_dependency(cloudwatch_logs_role)
+
         # ====================================================================
         # Outputs
         # ====================================================================
@@ -511,6 +532,13 @@ class PipelineStack(Stack):
             "AgentHoursFirehoseArn",
             value=agent_hours_firehose.attr_arn,
             description="Agent hours Firehose delivery stream ARN"
+        )
+
+        CfnOutput(
+            self,
+            "IndexUsageFirehoseArn",
+            value=index_usage_firehose.attr_arn,
+            description="Index usage Firehose delivery stream ARN"
         )
         
         # CloudTrail and Metrics pipeline outputs

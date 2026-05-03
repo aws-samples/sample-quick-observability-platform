@@ -10,7 +10,7 @@ This Lambda function transforms CloudWatch Logs data from Kinesis Firehose into 
 - Parses JSON log records from CloudWatch Logs `logEvents`
 - Drops `CONTROL_MESSAGE` records (health checks sent by CloudWatch Logs)
 - Extracts the event timestamp from the message payload's `event_timestamp` field (handles both millisecond and second formats), falling back to the CloudWatch log event envelope timestamp
-- Maps field names (e.g., `accountId` → `account_id`)
+- Maps field names (e.g., `accountId` → `account_id`, `logType` → `message_type`). INDEX_USAGE_LOGS uses snake_case natively (`log_type`, `account_id`), so both camelCase and snake_case conventions are handled.
 - Strips sensitive message content fields (`user_message`, `system_text_message`) when `INCLUDE_MESSAGE_CONTENT` is `false`
 - Serializes nested objects/lists as JSON strings
 - Returns transformed records to Firehose in JSON Lines format

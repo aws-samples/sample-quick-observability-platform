@@ -28,6 +28,12 @@ import subprocess
 import sys
 import time
 
+# Suppress noisy JSII node version warnings globally
+os.environ["JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION"] = "1"
+os.environ["JSII_SILENCE_WARNING_DEPRECATED_NODE_VERSION"] = "1"
+os.environ["JSII_DEPRECATED"] = "quiet"
+os.environ["CDK_DISABLE_VERSION_CHECK"] = "1"
+
 
 # ── Helpers (same patterns as deploy.py) ──────────────────────────────────
 
@@ -301,6 +307,7 @@ def main():
     chat_logs_group = logs_outputs.get("ChatLogsGroup", "")
     feedback_logs_group = logs_outputs.get("FeedbackLogsGroup", "")
     agent_hours_logs_group = logs_outputs.get("AgentHoursLogsGroup", "")
+    index_usage_logs_group = logs_outputs.get("IndexUsageLogsGroup", "")
     data_lake_bucket = pipeline_outputs.get("DataLakeBucketName", "")
 
     # Detect region from KMS key ARN
@@ -359,6 +366,7 @@ def main():
         "chatLogsGroup": chat_logs_group,
         "feedbackLogsGroup": feedback_logs_group,
         "agentHoursLogsGroup": agent_hours_logs_group,
+        "indexUsageLogsGroup": index_usage_logs_group,
     }
     if pipeline_stack:
         context["pipelineStackName"] = pipeline_stack

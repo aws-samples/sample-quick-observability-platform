@@ -21,6 +21,12 @@ import shutil
 import subprocess
 import sys
 
+# Suppress noisy JSII node version warnings globally
+os.environ["JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION"] = "1"
+os.environ["JSII_SILENCE_WARNING_DEPRECATED_NODE_VERSION"] = "1"
+os.environ["JSII_DEPRECATED"] = "quiet"
+os.environ["CDK_DISABLE_VERSION_CHECK"] = "1"
+
 
 DEPLOY_CONFIG_PATH = os.path.join("cdk", "deploy-config.json")
 
@@ -257,11 +263,6 @@ def bootstrap_cdk(cdk_cmd, account_id, region, profile):
 
 
 def main():
-    print("╔════════════════════════════════════════════════════════════════╗")
-    print("║          Amazon Quick Observability Platform - Deploy          ║")
-    print("╚════════════════════════════════════════════════════════════════╝")
-    print()
-
     deploy_logs = "--logs" in sys.argv
     deploy_pipeline = "--pipeline" in sys.argv
     datacatalog_only = "--datacatalog" in sys.argv
@@ -273,12 +274,27 @@ def main():
         datacatalog_only = True
 
     if not deploy_logs and not deploy_pipeline and not datacatalog_only and not dashboard_only:
+        print("╔════════════════════════════════════════════════════════════════╗")
+        print("║          Amazon Quick Observability Platform - Deploy          ║")
+        print("╚════════════════════════════════════════════════════════════════╝")
+        print()
         print("Usage:")
         print("  python3 deploy.py --logs            # Step 1: Deploy AWS KMS key + CloudWatch Logs")
         print("  python3 deploy.py --pipeline        # Step 2: Deploy data pipeline")
         print("  python3 deploy.py --datacatalog     # Step 3: Set up data catalog (Athena + optional Lake Formation)")
         print("  python3 deploy.py --dashboard       # Step 4: Deploy datasets, analysis, and dashboard")
         sys.exit(1)
+
+    if deploy_logs:
+        print("╔════════════════════════════════════════════════════════════════╗")
+        print("║   Amazon Quick Observability - CloudWatch Logs Setup (Step 1)  ║")
+        print("╚════════════════════════════════════════════════════════════════╝")
+        print()
+    elif deploy_pipeline:
+        print("╔════════════════════════════════════════════════════════════════╗")
+        print("║    Amazon Quick Observability - Data Pipeline Setup (Step 2)   ║")
+        print("╚════════════════════════════════════════════════════════════════╝")
+        print()
 
     if deploy_logs and deploy_pipeline:
         print("❌ Use --logs or --pipeline, not both.")
@@ -326,6 +342,7 @@ def main():
     chat_logs = "/aws/vendedlogs/quick/chat"
     feedback_logs = "/aws/vendedlogs/quick/feedback"
     agent_hours_logs = "/aws/vendedlogs/quick/agent-hours"
+    index_usage_logs = "/aws/vendedlogs/quick/index-usage"
 
     if deploy_logs:
         print("📝 CloudWatch log group names:")
@@ -334,6 +351,7 @@ def main():
         chat_logs = prompt("  Chat logs group", chat_logs)
         feedback_logs = prompt("  Feedback logs group", feedback_logs)
         agent_hours_logs = prompt("  Agent hours logs group", agent_hours_logs)
+        index_usage_logs = prompt("  Index usage logs group", index_usage_logs)
         print()
 
         # Message content opt-in
@@ -374,6 +392,7 @@ def main():
         print(f"  Chat Logs: {chat_logs}")
         print(f"  Feedback Logs: {feedback_logs}")
         print(f"  Agent Hours Logs: {agent_hours_logs}")
+        print(f"  Index Usage Logs: {index_usage_logs}")
         print(f"  Message Content: {'included' if include_message_content else 'excluded'}")
         print()
         confirm = input("Proceed? (y/N): ").strip().lower()
@@ -405,6 +424,7 @@ def main():
         "chatLogsGroup": chat_logs,
         "feedbackLogsGroup": feedback_logs,
         "agentHoursLogsGroup": agent_hours_logs,
+        "indexUsageLogsGroup": index_usage_logs,
     }
 
     # Deploy Logs Stack (Step 1)
@@ -424,12 +444,14 @@ def main():
         chat_logs = get_stack_output(logs_stack_name, "ChatLogsGroup") or chat_logs
         feedback_logs = get_stack_output(logs_stack_name, "FeedbackLogsGroup") or feedback_logs
         agent_hours_logs = get_stack_output(logs_stack_name, "AgentHoursLogsGroup") or agent_hours_logs
+        index_usage_logs = get_stack_output(logs_stack_name, "IndexUsageLogsGroup") or index_usage_logs
         include_msg_content = get_stack_output(logs_stack_name, "IncludeMessageContent") or "false"
 
         context["kmsKeyArn"] = kms_key_arn
         context["chatLogsGroup"] = chat_logs
         context["feedbackLogsGroup"] = feedback_logs
         context["agentHoursLogsGroup"] = agent_hours_logs
+        context["indexUsageLogsGroup"] = index_usage_logs
         context["includeMessageContent"] = include_msg_content
         context["stackName"] = pipeline_stack_name
 
@@ -451,6 +473,7 @@ def main():
         print("    • Chat logs: ask questions using the chat agent (My Assistant)")
         print("    • Feedback logs: provide thumbs up/down on chat responses")
         print("    • Agent hours: use Flows, Research, or Automations")
+        print("    • Index usage logs: create or update a Space or Knowledge Base")
         print()
         print(f"  Verify logs: aws logs tail {chat_logs} --since 1h --profile {profile}")
         print()
@@ -632,7 +655,7 @@ def deploy_datacatalog():
     print()
     print("  Verify data is flowing to Athena tables:")
     query_prefix = "    SELECT COUNT(*) FROM"
-    for t in ["chat_logs", "feedback_logs", "agent_hours_logs", "cloudtrail_events"]:
+    for t in ["chat_logs", "feedback_logs", "agent_hours_logs", "cloudtrail_events", "index_usage_logs"]:
         print(f"{query_prefix} {database}.{t}")
     print()
     print("  Next: python3 deploy.py --dashboard")
@@ -775,6 +798,7 @@ def deploy_dashboard():
     chat_logs = "/aws/vendedlogs/quick/chat"
     feedback_logs = "/aws/vendedlogs/quick/feedback"
     agent_hours_logs = "/aws/vendedlogs/quick/agent-hours"
+    index_usage_logs = "/aws/vendedlogs/quick/index-usage"
     for sn, so in outputs.items():
         if "ChatLogsGroup" in so:
             chat_logs = so["ChatLogsGroup"]
@@ -782,6 +806,8 @@ def deploy_dashboard():
             feedback_logs = so["FeedbackLogsGroup"]
         if "AgentHoursLogsGroup" in so:
             agent_hours_logs = so["AgentHoursLogsGroup"]
+        if "IndexUsageLogsGroup" in so:
+            index_usage_logs = so["IndexUsageLogsGroup"]
 
     setup_venv()
     cdk_cmd = find_cdk()
@@ -793,6 +819,7 @@ def deploy_dashboard():
         "chatLogsGroup": chat_logs,
         "feedbackLogsGroup": feedback_logs,
         "agentHoursLogsGroup": agent_hours_logs,
+        "indexUsageLogsGroup": index_usage_logs,
         "quicksightDatabase": database,
         "quicksightWorkgroup": workgroup,
         "quicksightOwnerArn": owner,

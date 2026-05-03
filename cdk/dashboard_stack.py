@@ -5,8 +5,8 @@ Amazon Quick Observability Platform - Quick Sight CDK Stack
 
 Creates all Quick Sight resources:
 - Athena data source
-- 4 datasets (Chat Activity, Feedback Analysis, Agent Hours Usage,
-  API Audit Trail)
+- 5 datasets (Chat Activity, Feedback Analysis, Agent Hours Usage,
+  API Audit Trail, Index Usage)
 - Quick Sight topic with enriched field metadata and custom instructions
 - Lambda-backed Custom Resource for topic permissions
 - 4-sheet Quick Sight analysis with KPI visuals, charts, and grid layout
@@ -290,6 +290,58 @@ FROM {database}.cloudtrail_events
             "api_feature", "account_id",
         ],
     },
+    {
+        "id_suffix": "index-usage",
+        "name": "Index Usage",
+        "description": (
+            "Per-source storage metrics for knowledge bases and Spaces "
+            "including consumed index size, source size, and document counts"
+        ),
+        "sql": """
+SELECT
+    event_time,
+    user_name,
+    consumed_index_size,
+    consumed_index_size_gb,
+    consumed_index_size_mb,
+    source_type,
+    source_name,
+    source_arn,
+    consumed_source_size,
+    consumed_source_size_gb,
+    consumed_source_size_mb,
+    consumed_source_doc_count,
+    account_id,
+    year, month, day
+FROM {database}.index_usage
+""",
+        "input_columns": [
+            {"Name": "event_time", "Type": "DATETIME"},
+            {"Name": "user_name", "Type": "STRING"},
+            {"Name": "consumed_index_size", "Type": "INTEGER"},
+            {"Name": "consumed_index_size_gb", "Type": "DECIMAL"},
+            {"Name": "consumed_index_size_mb", "Type": "DECIMAL"},
+            {"Name": "source_type", "Type": "STRING"},
+            {"Name": "source_name", "Type": "STRING"},
+            {"Name": "source_arn", "Type": "STRING"},
+            {"Name": "consumed_source_size", "Type": "INTEGER"},
+            {"Name": "consumed_source_size_gb", "Type": "DECIMAL"},
+            {"Name": "consumed_source_size_mb", "Type": "DECIMAL"},
+            {"Name": "consumed_source_doc_count", "Type": "INTEGER"},
+            {"Name": "account_id", "Type": "STRING"},
+            {"Name": "year", "Type": "INTEGER"},
+            {"Name": "month", "Type": "INTEGER"},
+            {"Name": "day", "Type": "INTEGER"},
+        ],
+        "projected_columns": [
+            "event_time", "user_name", "consumed_index_size",
+            "consumed_index_size_gb", "consumed_index_size_mb",
+            "source_type", "source_name", "source_arn",
+            "consumed_source_size", "consumed_source_size_gb",
+            "consumed_source_size_mb", "consumed_source_doc_count",
+            "account_id",
+        ],
+    },
 ]
 
 
@@ -314,7 +366,7 @@ TOPIC_COLUMNS = {
         {"ColumnName": "account_id", "ColumnFriendlyName": "Account Id", "IsIncludedInTopic": False},
     ],
     "feedback-analysis": [
-        {"ColumnName": "event_time", "ColumnFriendlyName": "Feedback Time", "ColumnDescription": "When the feedback was submitted", "ColumnSynonyms": ["date", "time", "when", "timestamp"], "ColumnDataRole": "DIMENSION", "IsIncludedInTopic": True, "SemanticType": {"TypeName": "DATE"}, "TimeGranularity": "DAY"},
+        {"ColumnName": "event_time", "ColumnFriendlyName": "Event Time", "ColumnDescription": "When the feedback was submitted", "ColumnSynonyms": ["date", "time", "when", "timestamp"], "ColumnDataRole": "DIMENSION", "IsIncludedInTopic": True, "SemanticType": {"TypeName": "DATE"}, "TimeGranularity": "DAY"},
         {"ColumnName": "user_name", "ColumnFriendlyName": "User", "ColumnDescription": "User who submitted feedback", "ColumnSynonyms": ["person", "employee", "who", "reviewer"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "PERSON"}},
         {"ColumnName": "feedback_source", "ColumnFriendlyName": "Feedback Source", "ColumnDescription": "Whether feedback is for Research or Chat", "ColumnSynonyms": ["source", "from research", "from chat"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "CATEGORY"}},
         {"ColumnName": "reason", "ColumnFriendlyName": "Reason", "ColumnDescription": "Reason selected for the feedback", "ColumnSynonyms": ["why", "cause", "feedback reason"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "CATEGORY"}},
@@ -328,7 +380,7 @@ TOPIC_COLUMNS = {
         {"ColumnName": "feedback_type", "ColumnFriendlyName": "Feedback Type", "IsIncludedInTopic": True},
     ],
     "agent-hours-usage": [
-        {"ColumnName": "event_time", "ColumnFriendlyName": "Usage Time", "ColumnDescription": "When the usage was recorded", "ColumnSynonyms": ["date", "time", "when", "timestamp"], "ColumnDataRole": "DIMENSION", "IsIncludedInTopic": True, "SemanticType": {"TypeName": "DATE"}, "TimeGranularity": "DAY"},
+        {"ColumnName": "event_time", "ColumnFriendlyName": "Event Time", "ColumnDescription": "When the usage was recorded", "ColumnSynonyms": ["date", "time", "when", "timestamp"], "ColumnDataRole": "DIMENSION", "IsIncludedInTopic": True, "SemanticType": {"TypeName": "DATE"}, "TimeGranularity": "DAY"},
         {"ColumnName": "user_name", "ColumnFriendlyName": "User", "ColumnDescription": "User consuming agent hours", "ColumnSynonyms": ["person", "employee", "who", "consumer"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "PERSON"}},
         {"ColumnName": "subscription_type", "ColumnFriendlyName": "Subscription", "ColumnDescription": "Subscription tier (Pro, Reader, etc.)", "ColumnSynonyms": ["plan", "tier", "license"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "CATEGORY"}},
         {"ColumnName": "service", "ColumnFriendlyName": "Service", "ColumnDescription": "Service consuming hours: Research, Chat, Automation, Flows, etc.", "ColumnSynonyms": ["product", "feature", "reporting service", "research", "chat", "automation", "flows"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "CATEGORY"}},
@@ -358,6 +410,17 @@ TOPIC_COLUMNS = {
         {"ColumnName": "api_feature", "ColumnFriendlyName": "API Feature", "ColumnDescription": "Feature category of the API call: Dashboard, Space, Knowledge Base, Dataset, Q Topic, etc.", "ColumnSynonyms": ["feature", "category", "what feature", "space", "knowledge base", "dashboard"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "CATEGORY"}},
         {"ColumnName": "user_type", "ColumnFriendlyName": "User Type", "IsIncludedInTopic": True},
         {"ColumnName": "event_type", "ColumnFriendlyName": "Event Type", "IsIncludedInTopic": True},
+        {"ColumnName": "account_id", "ColumnFriendlyName": "Account Id", "IsIncludedInTopic": False},
+    ],
+    "index-usage": [
+        {"ColumnName": "event_time", "ColumnFriendlyName": "Event Time", "ColumnDescription": "Timestamp of the index usage measurement", "ColumnSynonyms": ["date", "time", "when", "timestamp", "measurement date"], "ColumnDataRole": "DIMENSION", "IsIncludedInTopic": True, "SemanticType": {"TypeName": "DATE"}, "TimeGranularity": "DAY", "DefaultFormatting": {"DisplayFormat": "DATE"}},
+        {"ColumnDataRole": "MEASURE", "ColumnName": "consumed_index_size_gb", "ColumnFriendlyName": "Index Size (GB)", "ColumnDescription": "Total consumed index size in gigabytes", "ColumnSynonyms": ["index size", "total size", "index gb", "storage size", "index storage"], "IsIncludedInTopic": True, "Aggregation": "SUM"},
+        {"ColumnDataRole": "MEASURE", "ColumnName": "consumed_source_size_gb", "ColumnFriendlyName": "Source Size (GB)", "ColumnDescription": "Size consumed by this source in gigabytes", "ColumnSynonyms": ["source size", "source gb", "kb size", "space size", "data size"], "IsIncludedInTopic": True, "Aggregation": "SUM"},
+        {"ColumnDataRole": "MEASURE", "ColumnName": "consumed_source_doc_count", "ColumnFriendlyName": "Document Count", "ColumnDescription": "Number of documents from this source", "ColumnSynonyms": ["docs", "documents", "doc count", "number of documents", "file count"], "IsIncludedInTopic": True, "Aggregation": "SUM"},
+        {"ColumnName": "source_type", "ColumnFriendlyName": "Source Type", "ColumnDescription": "Type of source: KB (Knowledge Base) or SPACE", "ColumnSynonyms": ["type", "kb or space", "knowledge base", "space", "source category"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "CATEGORY"}},
+        {"ColumnName": "source_name", "ColumnFriendlyName": "Source Name", "ColumnDescription": "Human-readable name of the knowledge base or Space", "ColumnSynonyms": ["name", "kb name", "space name", "source", "resource name"], "IsIncludedInTopic": True},
+        {"ColumnName": "source_arn", "ColumnFriendlyName": "Source ARN", "ColumnDescription": "Full ARN of the source resource", "ColumnSynonyms": ["arn", "resource arn", "source resource"], "IsIncludedInTopic": True},
+        {"ColumnName": "user_name", "ColumnFriendlyName": "User", "ColumnDescription": "User associated with the index usage event", "ColumnSynonyms": ["person", "employee", "who", "owner"], "IsIncludedInTopic": True, "SemanticType": {"TypeName": "PERSON"}},
         {"ColumnName": "account_id", "ColumnFriendlyName": "Account Id", "IsIncludedInTopic": False},
     ],
 }
@@ -393,6 +456,15 @@ CUSTOM_INSTRUCTIONS = (
     "Automation, Connector), or read vs write operations: use the API "
     "Audit Trail dataset. The api_feature column categorizes the API call. "
     "The read_or_write column has values: Read, Write.\n\n"
+    "For questions about storage, index size, knowledge base size, "
+    "Space size, document count, GB consumed, top sources, top users "
+    "by storage, or how much index capacity is used: use the Index Usage "
+    "dataset. The consumed_index_size_gb column is the total index size "
+    "in gigabytes. The consumed_source_size_gb column is the size consumed "
+    "by an individual source. The source_type column has values: SPACE, KB "
+    "(Knowledge Base). The source_name column is the human-readable name "
+    "of the knowledge base or Space. The consumed_source_doc_count column "
+    "is the number of documents from each source.\n\n"
     "When the user asks about 'features', show breakdown by the feature "
     "column from Chat Activity (System Chat Agent, Custom Chat Agent, "
     "Flow), or by service from Agent Hours (Research, Flow, "
@@ -525,6 +597,37 @@ SHEET_DEFS = [
                           "extra_dimensions": ["event_id", "api_action", "api_feature", "user_name", "user_type", "read_or_write", "resource_arn", "error_code"],
                           "values": [],
                           "sort_desc": "event_time"}),
+        ],
+    },
+    # ── Sheet 5: Index Storage Usage ─────────────────────────────────────
+    # "How much index storage is consumed? Which sources are the largest?"
+    {
+        "id_suffix": "index-storage",
+        "name": "Index Storage Usage",
+        "dataset": "index-usage",
+        "visuals": [
+            _make_visual("idx-kpi-size", "Total Index Size (GB)", "KPI",
+                         {"values": [{"field": "consumed_index_size_gb", "agg": "SUM"}]}),
+            _make_visual("idx-by-type", "Storage by Source Type", "PIE",
+                         {"category": "source_type", "values": [{"field": "consumed_source_size_gb", "agg": "SUM"}]}),
+            _make_visual("idx-trend", "Index Storage Trend", "LINE",
+                         {"category": "event_time", "values": [{"field": "consumed_index_size_gb", "agg": "SUM"}]}),
+            _make_visual("idx-top-kb", "Top Knowledge Bases by Size", "BAR",
+                         {"category": "source_name", "values": [{"field": "consumed_source_size_gb", "agg": "SUM"}]}),
+            _make_visual("idx-top-spaces", "Top Spaces by Size", "BAR",
+                         {"category": "source_name", "values": [{"field": "consumed_source_size_gb", "agg": "SUM"}]}),
+            _make_visual("idx-top-users", "Top Users by Storage", "BAR",
+                         {"category": "user_name", "values": [{"field": "consumed_source_size_gb", "agg": "SUM"}]}),
+            _make_visual("idx-details", "All Sources Detail", "TABLE",
+                         {"category": "event_time",
+                          "extra_dimensions": ["source_name", "source_type", "source_arn", "consumed_source_size_gb", "consumed_source_doc_count", "consumed_index_size_gb", "user_name"],
+                          "values": [],
+                          "sort_desc": "event_time"}),
+        ],
+        # Visual-scoped category filters for the KB and SPACE bar charts
+        "visual_filters": [
+            {"visual_id": "idx-top-kb", "column": "source_type", "values": ["KB"]},
+            {"visual_id": "idx-top-spaces", "column": "source_type", "values": ["SPACE"]},
         ],
     },
 ]
@@ -660,6 +763,8 @@ def _build_visual_definition(prefix, ds_suffix, visual):
         "user_type-COUNT": "API Calls",
         "read_or_write-COUNT": "API Calls",
         "usage_group-COUNT": "Records",
+        "consumed_index_size_gb-SUM": "Index Size (GB)",
+        "consumed_source_size_gb-SUM": "Source Size (GB)",
     }
 
     # Build drill-down hierarchies
@@ -1273,6 +1378,47 @@ class QuickSightStack(Stack):
         # ── Add ParameterControls to each sheet ──────────────────────────
         for i, sheet_def in enumerate(SHEET_DEFS):
             suffix = sheet_def["id_suffix"]
+
+            # Add visual-scoped category filters (e.g. source_type = KB)
+            for vf in sheet_def.get("visual_filters", []):
+                vf_vid = f"{prefix}-{vf['visual_id']}"
+                vf_col = vf["column"]
+                vf_vals = vf["values"]
+                vf_fg_id = f"{prefix}-fg-{suffix}-{vf['visual_id']}"
+                vf_filter_id = f"{prefix}-filter-{suffix}-{vf['visual_id']}-{vf_col}"
+                sheet_id = f"{prefix}-sheet-{suffix}"
+                ds_suffix = sheet_def["dataset"]
+
+                filter_groups.append({
+                    "FilterGroupId": vf_fg_id,
+                    "Filters": [{
+                        "CategoryFilter": {
+                            "FilterId": vf_filter_id,
+                            "Column": {
+                                "DataSetIdentifier": ds_suffix,
+                                "ColumnName": vf_col,
+                            },
+                            "Configuration": {
+                                "FilterListConfiguration": {
+                                    "MatchOperator": "CONTAINS",
+                                    "CategoryValues": vf_vals,
+                                }
+                            },
+                        }
+                    }],
+                    "ScopeConfiguration": {
+                        "SelectedSheets": {
+                            "SheetVisualScopingConfigurations": [{
+                                "SheetId": sheet_id,
+                                "Scope": "SELECTED_VISUALS",
+                                "VisualIds": [vf_vid],
+                            }]
+                        }
+                    },
+                    "CrossDataset": "SINGLE_DATASET",
+                    "Status": "ENABLED",
+                })
+
             sheets[i]["ParameterControls"] = [
                 {
                     "DateTimePicker": {

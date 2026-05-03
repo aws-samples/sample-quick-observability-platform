@@ -5,7 +5,7 @@ Amazon Quick Observability Platform - Logs Stack
 
 Creates:
 - Customer-managed KMS key (with automatic rotation)
-- CloudWatch Log Groups (chat, feedback, agent hours) - KMS encrypted
+- CloudWatch Log Groups (chat, feedback, agent hours, index usage) - KMS encrypted
 - Vended logs delivery configuration (sources, destinations, deliveries)
 """
 from aws_cdk import (
@@ -34,6 +34,7 @@ class LogsStack(Stack):
         chat_logs_group_name = self.node.try_get_context("chatLogsGroup") or "/aws/vendedlogs/quick/chat"
         feedback_logs_group_name = self.node.try_get_context("feedbackLogsGroup") or "/aws/vendedlogs/quick/feedback"
         agent_hours_logs_group_name = self.node.try_get_context("agentHoursLogsGroup") or "/aws/vendedlogs/quick/agent-hours"
+        index_usage_logs_group_name = self.node.try_get_context("indexUsageLogsGroup") or "/aws/vendedlogs/quick/index-usage"
 
         # Whether to include user_message and system_text_message in chat logs.
         # Default is false — message content is excluded for enterprise environments
@@ -258,6 +259,18 @@ class LogsStack(Stack):
             ),
         )
 
+        self.index_usage_log_group = logs.LogGroup(
+            self, "IndexUsageLogGroup",
+            log_group_name=index_usage_logs_group_name,
+            encryption_key=self.kms_key,
+            removal_policy=RemovalPolicy.DESTROY,
+            data_protection_policy=logs.DataProtectionPolicy(
+                name="index-usage-logs-data-protection",
+                description="Mask sensitive data in Quick index usage logs",
+                identifiers=all_data_identifiers,
+            ),
+        )
+
         # ====================================================================
         # Vended Logs Delivery Configuration
         # ====================================================================
@@ -356,6 +369,40 @@ class LogsStack(Stack):
         agent_hours_delivery.add_dependency(agent_hours_source)
         agent_hours_delivery.add_dependency(agent_hours_dest)
 
+        # Index usage logs delivery
+        index_usage_source = logs.CfnDeliverySource(
+            self, "IndexUsageDeliverySource",
+            name=f"{resource_prefix}-index-usage-logs",
+            log_type="INDEX_USAGE_LOGS",
+            resource_arn=quicksight_arn,
+        )
+
+        index_usage_dest = logs.CfnDeliveryDestination(
+            self, "IndexUsageDeliveryDestination",
+            name=f"{resource_prefix}-index-usage-destination",
+            output_format="json",
+            destination_resource_arn=self.index_usage_log_group.log_group_arn,
+        )
+        index_usage_dest.add_dependency(self.index_usage_log_group.node.default_child)
+
+        index_usage_delivery = logs.CfnDelivery(
+            self, "IndexUsageDelivery",
+            delivery_source_name=index_usage_source.name,
+            delivery_destination_arn=index_usage_dest.attr_arn,
+            # INDEX_USAGE_LOGS uses snake_case for common fields (log_type,
+            # account_id) unlike older log types which use camelCase (logType,
+            # accountId).  Omitting record_fields entirely delivers all fields
+            # by default, but we list them explicitly for clarity.
+            record_fields=[
+                "resource_arn", "event_timestamp", "log_type", "account_id",
+                "user_arn", "consumed_index_size", "source_type",
+                "source_name", "source_arn", "consumed_source_size",
+                "consumed_source_doc_count",
+            ],
+        )
+        index_usage_delivery.add_dependency(index_usage_source)
+        index_usage_delivery.add_dependency(index_usage_dest)
+
         # ====================================================================
         # Outputs
         # ====================================================================
@@ -367,6 +414,8 @@ class LogsStack(Stack):
                   description="Feedback logs CloudWatch Log Group name")
         CfnOutput(self, "AgentHoursLogsGroup", value=agent_hours_logs_group_name,
                   description="Agent hours logs CloudWatch Log Group name")
+        CfnOutput(self, "IndexUsageLogsGroup", value=index_usage_logs_group_name,
+                  description="Index usage logs CloudWatch Log Group name")
         CfnOutput(self, "IncludeMessageContent",
                   value="true" if include_message_content else "false",
                   description="Whether chat message content is included in logs")

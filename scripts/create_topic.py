@@ -6,7 +6,7 @@ Create the Amazon Quick Observability Quick Sight Topic.
 
 The topic requires all SPICE datasets to have completed at least one
 successful ingestion with data. Run this after generating activity in
-Amazon Quick (chat, feedback, agent hours) so the datasets have rows.
+Amazon Quick (chat, feedback, agent hours, index usage) so the datasets have rows.
 
 Usage:
     python3 scripts/create_topic.py
@@ -37,6 +37,14 @@ except ImportError:
 
 
 def main():
+    print("╔════════════════════════════════════════════════════════════════╗")
+    print("║  Amazon Quick Observability - QuickSight Topic Setup (Step 5)  ║")
+    print("╚════════════════════════════════════════════════════════════════╝")
+    print()
+
+    # Suppress noisy JSII node version warnings when importing dashboard_stack
+    os.environ["JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION"] = "1"
+
     parser = argparse.ArgumentParser(description="Create Quick Observability Quick Sight Topic")
     parser.add_argument("--profile", default=None, help="AWS CLI profile (auto-detected from config)")
     parser.add_argument("--region", default=None, help="AWS region (auto-detected from config)")
