@@ -347,12 +347,11 @@ ORDER BY count DESC;
 -- Top sources by consumed storage size (index usage)
 SELECT source_name, source_type,
        MAX(consumed_index_size_gb) AS total_index_size_gb,
-       SUM(consumed_source_size_gb) AS total_source_size_gb,
-       SUM(consumed_source_doc_count) AS total_docs
+       MAX(consumed_source_size_gb) AS source_size_gb,
+       MAX(consumed_source_doc_count) AS doc_count
 FROM {database}.index_usage
 GROUP BY source_name, source_type
-ORDER BY total_source_size_gb DESC
-LIMIT 20;
+ORDER BY source_size_gb DESC;
 ```
 
 ---
