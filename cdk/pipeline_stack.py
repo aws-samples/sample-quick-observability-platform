@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 """
-Amazon Quick Observability Platform - Main CDK Stack
+Amazon Quick Observability Platform - Pipeline CDK Stack
 """
 from aws_cdk import (
     Stack,

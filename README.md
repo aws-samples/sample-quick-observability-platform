@@ -1,6 +1,6 @@
 # Amazon Quick Observability Platform
 
-Build enterprise observability for Amazon Quick. Captures chat interactions, user feedback, agent hours, and API audit trails into an encrypted S3 data lake queryable through Amazon Athena.
+Build an enterprise observability solution for Amazon Quick. Captures chat interactions, user feedback, agent hours, index usage, and API audit trails into an encrypted S3 data lake queryable through Amazon Athena, with a pre-built Quick Sight dashboard and custom chat agent for visual and conversational analytics.
 
 ## Table of Contents
 
@@ -19,14 +19,14 @@ Build enterprise observability for Amazon Quick. Captures chat interactions, use
 
 ## Overview
 
-Amazon Quick generates operational data across two AWS services. This solution collects, transforms, and consolidates that data:
+Amazon Quick generates operational data across Amazon CloudWatch and AWS CloudTrail. This solution collects, transforms, and consolidates that data:
 
 | Data source | What it captures | How this solution ingests it |
 |-------------|-----------------|------------------------------|
 | [CloudWatch Logs](https://docs.aws.amazon.com/quick/latest/userguide/monitoring-quicksuite-chat-feedback-cloudwatch.html) | Chat conversations, user feedback (thumbs up/down with reasons), agent hours consumption, index storage usage per source | Vended logs delivery → CloudWatch Log Groups → Subscription Filters → Firehose (Lambda transform) → S3 |
 | [CloudTrail](https://docs.aws.amazon.com/quick/latest/userguide/incident-response-logging-and-monitoring-qs.html) | API calls and service events (dashboard views, user management, CRUD operations), user identity, source IP | EventBridge rule (filters `aws.quicksight` API calls and service events) → Firehose (Lambda transform) → S3 |
 
-All data is encrypted at rest with a customer-managed KMS key (auto-rotation enabled) and in transit over HTTPS. A KMS key policy grants each service principal only the specific KMS actions it needs. CloudWatch Logs data protection policies on all four log groups (chat, feedback, agent hours, and index usage) use all available managed data identifiers to detect and mask sensitive data including credentials, financial information, PII, PHI, and device identifiers. Only users with the `logs:Unmask` IAM permission can view unmasked data. Every IAM role is scoped to the minimum permissions required, and all CDK stacks pass [cdk-nag AWS Solutions](https://github.com/cdklabs/cdk-nag) checks with zero non-compliant findings.
+All data is encrypted at rest with a customer-managed KMS key (auto-rotation enabled) and in transit over HTTPS. A KMS key policy grants each service principal only the specific KMS actions it needs. CloudWatch Logs data protection policies on all four log groups (chat, feedback, agent hours, and index usage) use all available managed data identifiers to detect and mask sensitive data including credentials, financial information, PII, PHI, and device identifiers. Every IAM role is scoped to the minimum permissions required, and all CDK stacks pass [cdk-nag AWS Solutions](https://github.com/cdklabs/cdk-nag) checks with zero non-compliant findings.
 
 ## Security
 
@@ -40,7 +40,7 @@ This solution applies defense-in-depth across encryption, access control, data p
 
 - **Encryption at rest** — All data is encrypted with a customer-managed KMS key (`enable_key_rotation=True`). The same key encrypts CloudWatch Log Groups, S3 objects (with S3 Bucket Key), Firehose delivery streams, and Lambda environment variables.
 - **Encryption in transit** — The S3 data lake bucket enforces HTTPS-only access (`enforce_ssl=True`).
-- **PII masking** — CloudWatch Logs [data protection policies](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data.html) on all four log groups (chat, feedback, agent hours, and index usage) use all available managed data identifiers to detect and mask sensitive data including credentials (e.g. AWS secret keys, private keys), financial information (e.g. credit card numbers, bank account numbers), PII (e.g. driver's licenses, social security numbers, passport numbers, email addresses, phone numbers), PHI (e.g. health insurance numbers, Medicare beneficiary numbers), and device identifiers (e.g. IP addresses). Only users with the `logs:Unmask` IAM permission can view unmasked data.
+- **PII masking** — CloudWatch Logs [data protection policies](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/mask-sensitive-log-data.html) on all four log groups (chat, feedback, agent hours, and index usage) use all available managed data identifiers to detect and mask sensitive data including credentials (e.g. AWS secret keys, private keys), financial information (e.g. credit card numbers, bank account numbers), PII (e.g. driver's licenses, social security numbers, passport numbers, email addresses, phone numbers), PHI (e.g. health insurance numbers, Medicare beneficiary numbers), and device identifiers (e.g. IP addresses).
 - **Sensitive content control** — Chat message content (`user_message`, `system_text_message`) may contain sensitive or regulated data from connected enterprise sources. Before enabling message content logging, review your organization's data privacy, compliance, and data retention policies. By default, Quick omits these fields from the CloudWatch log events entirely. When message content logging is enabled, Lake Formation column-level exclusion prevents the Quick Sight service role from accessing these columns, while the deploying admin retains full access for Athena queries. This is configurable at deployment time.
 - **Least-privilege IAM** — Each IAM role is scoped to the minimum permissions required. The Firehose role can only write to specific S3 prefixes (`cloudwatch-logs/*`, `cloudtrail/*`, `errors/*`). Lambda has no S3 access — Firehose writes to S3, not Lambda. The KMS key policy grants each service principal only the specific KMS actions it needs.
 - **S3 hardening** — The data lake bucket enables versioning, blocks all public access (`BlockPublicAccess.BLOCK_ALL`), and enforces SSL.
@@ -54,18 +54,19 @@ This solution applies defense-in-depth across encryption, access control, data p
 
 ![Architecture Diagram](docs/sample-quick-observability-platform.png)
 
-The solution deploys three CDK stacks and two script-based steps:
+The solution deploys three CDK stacks, two script-based steps, and one manual console step:
 - **LogsStack** (`{prefix}-logs`): KMS key, CloudWatch Log Groups with data protection policies, vended logs delivery configuration
 - **PipelineStack** (`{prefix}-pipeline`): S3 data lake, Firehose delivery streams, Lambda transform functions, EventBridge rule, CloudWatch Logs subscription filters
 - **QuickSightStack** (`{prefix}-quicksight`): Custom theme, Athena data source, SPICE datasets with daily refresh, analysis, and dashboard
 
-The data catalog (Glue database, Athena tables, views, optional Lake Formation) is created by `scripts/setup_datacatalog.py`, not by CDK. The Quick Sight topic is created by `scripts/create_topic.py`, also outside CDK.
+The data catalog (Glue database, Athena tables, views, optional Lake Formation) is created by `scripts/setup_datacatalog.py`, not by CDK. The Quick Sight topic is created by `scripts/create_topic.py`, also outside CDK. The custom chat agent is created manually in the Amazon Quick console.
 
 ## Prerequisites
 
 - AWS CLI v2
 - Python 3.9+
-- Node.js 20+
+- Node.js 20+ (also provides `npx` for running CDK CLI)
+- AWS CDK CLI (`npm install -g aws-cdk`) or `npx` (auto-detected by `deploy.py`)
 - Amazon Quick subscription (Professional or Enterprise)
 
 ### IAM permissions
@@ -86,6 +87,8 @@ A single `deploy.py` script handles all deployment steps. Each step builds on th
 git clone https://github.com/aws-samples/sample-quick-observability-platform
 cd sample-quick-observability-platform
 ```
+
+The `deploy.py` script automatically creates a Python virtual environment, installs CDK dependencies, and bootstraps CDK on first run.
 
 ### Step 1: Set up CloudWatch Logs
 
@@ -214,7 +217,7 @@ The script reads dataset ARNs and the Quick Sight owner from `cdk/cdk-outputs.js
 
 Creates:
 - Quick Sight topic (`{prefix}-observability-topic`) named "Quick Observability" with `NEW_READER_EXPERIENCE` and `QBusinessInsightsEnabled`
-- Field-level metadata: friendly names, descriptions, synonyms, semantic types, aggregation defaults, and data roles for each column across all five datasets
+- Field-level metadata: friendly names, descriptions, synonyms, semantic types, aggregation defaults, and data roles for each column across all datasets
 - Custom instructions that route natural language questions to the correct dataset based on question type (adoption → Chat Activity, satisfaction → Feedback Analysis, cost → Agent Hours Usage, governance → API Audit Trail, storage → Index Usage)
 - Owner permissions on the topic
 
@@ -225,7 +228,7 @@ Create an Amazon Quick [custom chat agent](https://docs.aws.amazon.com/quick/lat
 1. Open the Amazon Quick console → **Chat Agents** → **Create agent**
 2. Enter the following:
    - **Name**: `Quick Observability Insights`
-   - **Description**: `Provides business leaders and administrators with actionable insights on Amazon Quick Suite adoption, usage, performance, agent hours, costs, user satisfaction, and API activity using observability data.`
+   - **Description**: `Provides business leaders and administrators with actionable insights on Amazon Quick adoption, usage, performance, agent hours, costs, user satisfaction, and API activity using observability data.`
 3. Under **Topics**, select the **Quick Observability** topic created in Step 5
 4. Under **Instructions**, paste the prompt from [`docs/Quick custom chat agent.txt`](docs/Quick%20custom%20chat%20agent.txt)
 5. Save and publish the agent

@@ -4,11 +4,12 @@
 """
 Amazon Quick Observability Platform - Cleanup
 
-Removes all resources created by deploy.py across all four deployment steps:
+Removes all resources created by deploy.py and scripts/create_topic.py:
   Step 1 (--logs):        AWS KMS key, CloudWatch Log Groups, vended logs delivery
   Step 2 (--pipeline):    S3 data lake, Lambda, Firehose, EventBridge
   Step 3 (--datacatalog): Glue database, Athena tables/views, Lake Formation
-  Step 4 (--dashboard):   Quick Sight data source, datasets, analysis, dashboard, topic
+  Step 4 (--dashboard):   Quick Sight data source, datasets, analysis, dashboard
+  Step 5 (create_topic):  Quick Sight topic
 
 CDK stacks are destroyed in reverse dependency order:
   quicksight -> pipeline -> logs

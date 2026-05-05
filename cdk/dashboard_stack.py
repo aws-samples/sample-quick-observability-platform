@@ -5,11 +5,9 @@ Amazon Quick Observability Platform - Quick Sight CDK Stack
 
 Creates all Quick Sight resources:
 - Athena data source
-- 5 datasets (Chat Activity, Feedback Analysis, Agent Hours Usage,
+- Datasets (Chat Activity, Feedback Analysis, Agent Hours Usage,
   API Audit Trail, Index Usage)
-- Quick Sight topic with enriched field metadata and custom instructions
-- Lambda-backed Custom Resource for topic permissions
-- 4-sheet Quick Sight analysis with KPI visuals, charts, and grid layout
+- Quick Sight analysis with KPI visuals, charts, and grid layout
 - Quick Sight dashboard published from the analysis
 
 Context parameters (from deploy.py):
@@ -1022,8 +1020,6 @@ def _build_grid_layout(prefix, sheet_def):
 
     return elements
 
-
-# ── Lambda inline code for topic permissions custom resource ──────────────
 
 # ══════════════════════════════════════════════════════════════════════════
 # Stack
